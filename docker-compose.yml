@@ -1,82 +1,66 @@
 version: '3.8'
-
 services:
-  backend:
-    env_file: './backend/.env'
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      - DOMAIN=localhost
-      - ENVIRONMENT=local
-      - PROJECT_NAME=Full Stack FastAPI Project
-      - STACK_NAME=full-stack-fastapi-project
-      - BACKEND_CORS_ORIGINS=http://localhost,http://localhost:5173,https://localhost,https://localhost:5173
-      - SECRET_KEY=changethis123
-      - FIRST_SUPERUSER=devops@hng.tech
-      - FIRST_SUPERUSER_PASSWORD=devops#HNG11
-      - USERS_OPEN_REGISTRATION=True
-      - SMTP_HOST=
-      - SMTP_USER=
-      - SMTP_PASSWORD=
-      - EMAILS_FROM_EMAIL=info@example.com
-      - SMTP_TLS=True
-      - SMTP_SSL=False
-      - SMTP_PORT=587
-      - POSTGRES_SERVER=dpg-cq45nto8fa8c73fl4cj0-a.oregon-postgres.render.com
-      - POSTGRES_DB=hng_devops_2
-      - POSTGRES_USER=alexin
-      - POSTGRES_PASSWORD=6UGnRF3MqLZ9P9fP1NqydV33VczsYKLG
-    depends_on:
-      - db
-
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "5173:5173"
-    env_file: './frontend/.env'
+      - '5173:5173' # Map port 5173 of the container to port 5173 on the host
 
-  # nginx:
-  #   build:
-  #     context: ./nginx
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "80:80"
-  #   depends_on:
-  #     - backend
-  #     - frontend
+  postgresdb:
+    image: postgres:13
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - '5433:5432'
+    # command: ['postgres', '-c', 'listen_addresses=*']
+    volumes:
+      - db-data:/var/lib/postgresql/data
 
-  nginx-proxy-manager:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - '8002:8000' # Replace with your application's port
+    depends_on:
+      wait-for-db:
+        condition: service_started
+        # condition: service_completed_successfully
+    env_file:
+      - ./.env
+
+  wait-for-db:
+    image: atkrad/wait4x
+    depends_on:
+      - postgresdb
+    command: postgresql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgresdb:5432/${POSTGRES_DB}?sslmode=disable"
+    # command: postgresql 'postgres://app:changethis123@postgresdb:5432/app?sslmode=disable'
+
+  adminer:
+    image: adminer:latest
+    container_name: adminer
+    environment:
+      ADMINER_DEFAULT_SERVER: postgresdb
+    restart: always
+    ports:
+      - 7777:8080
+
+  app:
     image: 'jc21/nginx-proxy-manager:latest'
     restart: unless-stopped
     ports:
-      - '80:80' # Public HTTP Port
-      - '443:443' # Public HTTPS Port
-      - '8090:81' # Admin Web Port
-
+      - '80:80'
+      - '8090:81'
+      - '443:443'
     volumes:
       - ./data:/data
       - ./letsencrypt:/etc/letsencrypt
 
-
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: dpg-cq45nto8fa8c73fl4cj0-a.oregon-postgres.render.com
-      POSTGRES_USER: alexin
-      POSTGRES_PASSWORD: 6UGnRF3MqLZ9P9fP1NqydV33VczsYKLG
-    volumes:
-      - db_data:/var/lib/postgresql/data
-
-  adminer:
-    image: adminer
-    restart: always
-    ports:
-      - 8080:8080
-
 volumes:
-  db_data:
+  db-data:
+    driver: local
+# docker-compose down --rmi all
